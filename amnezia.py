@@ -7,8 +7,10 @@ Amnezia Config Bulk Generator
 خروجی‌ها:
   configs.txt          -> کانفیگ‌های AmneziaWG نسخه 3.0 و 3.1 (متن)
   amnezia-mobile.json  -> آرایه کانفیگ Xray برای PingNG (WireGuard ساده، برای تست import)
+  amnezia-mahsang.txt  -> لینک‌های wireguard:// برای MahsaNG (هر خط یک لینک)
 """
 import json
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -43,6 +45,11 @@ def http_get(url, timeout=20):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", errors="replace")
+
+
+def enc(s):
+    # معادل encodeURIComponent در جاوااسکریپت
+    return urllib.parse.quote(str(s), safe="!~*'()")
 
 
 def fetch_ips():
@@ -175,6 +182,27 @@ def build_xray_mobile(accounts, ips):
     return json.dumps(items, indent=2)
 
 
+# ======================= خروجی ۳: لینک‌های MahsaNG (wireguard://) =======================
+def build_mahsa_links(accounts, ips):
+    links = []
+    for n, base, expires in accounts:
+        addresses = ",".join(a.strip() for a in base["address"].split(","))
+        for i, ip in enumerate(ips, 1):
+            host_port = ip
+            if ip.count(":") > 1:                       # IPv6 با پورت: [addr]:port
+                addr, port = ip.rsplit(":", 1)
+                host_port = f"[{addr}]:{port}"
+            q = [
+                ("address", addresses),
+                ("publickey", base["public_key"]),
+                ("mtu", str(MTU)),
+            ]
+            query = "&".join(f"{a}={enc(b)}" for a, b in q)
+            name = f"WG | A{n}-{i} | {ip}"
+            links.append(f"wireguard://{enc(base['private_key'])}@{host_port}?{query}#{enc(name)}")
+    return "\n".join(links)
+
+
 # ======================= اجرای اصلی =======================
 def main():
     print("Fetching IP list ...")
@@ -210,8 +238,12 @@ def main():
     with open("amnezia-mobile.json", "w", encoding="utf-8") as f:
         f.write(build_xray_mobile(accounts, ips))
 
+    # --- amnezia-mahsang.txt ---
+    with open("amnezia-mahsang.txt", "w", encoding="utf-8") as f:
+        f.write(build_mahsa_links(accounts, ips))
+
     print(f"\nDone: configs.txt ({len(accounts) * len(ips) * 2} configs), "
-          f"amnezia-mobile.json ({len(accounts) * len(ips)} entries)")
+          f"amnezia-mobile.json + amnezia-mahsang.txt ({len(accounts) * len(ips)} entries each)")
 
 
 if __name__ == "__main__":
